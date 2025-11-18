@@ -2,15 +2,21 @@ import express from "express";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import cors from "cors";
-import path from "path"; // ⬅️ CORRECCIÓN 1: Importar 'path'
+import path from "path";
+import { fileURLToPath } from 'url'; // Importar para corregir la ruta
 import { iniciarPartida, manejarJugarCarta, manejarSeleccionAtacante, manejarAtaque, manejarFinTurno } from './gameLogic.js';
+
+// --- CORRECCIÓN CLAVE ---
+// Definir __filename y __dirname para que Node encuentre los archivos en Render
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// -------------------------
 
 const app = express();
 app.use(cors());
 
-// CORRECCIÓN 2: Usar path.resolve para servir archivos estáticos de forma segura
-const __dirname = path.resolve();
-app.use(express.static(path.join(__dirname, "client")));
+// LÍNEA CLAVE PARA SERVIR EL FRONT-END (client/index.html)
+app.use(express.static(path.join(__dirname, "client"))); 
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: { origin: "*" } });
@@ -118,7 +124,6 @@ io.on("connection", (socket) => {
     });
 });
 
-// ⬅️ CORRECCIÓN 3: USAR EL PUERTO DE LA NUBE
 const PORT = process.env.PORT || 3000;
 
 httpServer.listen(PORT, () => {

@@ -66,7 +66,6 @@ function lanzarMoneda() {
 function iniciarPartida(id, sala, io) {
     const [p1, p2] = sala.jugadores;
     
-    // Distribución de mazos únicos
     const mazoBarajadoTotal = barajar(BARAJA_BASE);
     const mazo1Total = mazoBarajadoTotal.slice(0, 14);
     const mazo2Total = mazoBarajadoTotal.slice(14, 28); 
@@ -146,7 +145,6 @@ function ejecutarHabilidadAlInvocar(nombre, jugador, sala, io) {
             break;
             
         case "Zen":
-            // Invencible por 2 turnos de acción (turno actual + 2)
             sala.campo[jugador].find(c => c.nombre === "Zen").estadosEspeciales.invencible = sala.turnoActual + 2; 
             mensaje = "🍰 Zen activa Cheat Day! Invencible por 2 turnos!";
             sala.log.unshift(mensaje);
@@ -158,26 +156,8 @@ function ejecutarHabilidadAlInvocar(nombre, jugador, sala, io) {
             sala.log.unshift(mensaje);
             break;
             
-        case "Shiki":
-            const resultadoShiki = lanzarMoneda();
-            mensaje = `🪙 Shiki: ${resultadoShiki}! `;
-            if (resultadoShiki === "Cara") {
-                sala.campo[jugador].forEach(c => {
-                    if (!c.estadosEspeciales.defensaExtra) c.estadosEspeciales.defensaExtra = 0;
-                    c.estadosEspeciales.defensaExtra += 1;
-                });
-                mensaje += "Interpretación de Plano! Todas las cartas aliadas +1 defensa!";
-            } else {
-                mensaje += "Falla. No pasa nada.";
-            }
-            sala.log.unshift(mensaje);
-            io.to(sala.id).emit("habilidadMoneda", { resultado: resultadoShiki, mensaje: `Shiki lanza moneda: ${resultadoShiki}` });
-            break;
-            
         case "Reo":
             sala.campo[jugador].find(c => c.nombre === "Reo").estadosEspeciales.gastoPesadoTurnos = 3;
-            mensaje = "💸 Reo activa Gasto Pesado por 3 turnos!";
-            sala.log.unshift(mensaje);
             break;
 
         case "Aoi":
@@ -185,16 +165,61 @@ function ejecutarHabilidadAlInvocar(nombre, jugador, sala, io) {
             mensaje = "👑 Aoi activa Movimiento de Príncipe! El turno del rival será saltado.";
             sala.log.unshift(mensaje);
             break;
-            
-        case "Allen":
-            if (sala.campo[op].length > 0) {
-                const cartaAleatoria = sala.campo[op][Math.floor(Math.random() * sala.campo[op].length)];
-                cartaAleatoria.estadosEspeciales.inmovilizado = true;
-                mensaje = `💬 Allen inmoviliza a ${cartaAleatoria.nombre} con su charla imparable!`;
-                sala.log.unshift(mensaje);
-            }
-            break;
     }
+}
+
+function manejarLanzarMoneda(jugador, sala, io) {
+    if (sala.turno !== jugador) return;
+    
+    const shiki = sala.campo[jugador].find(c => c.nombre === "Shiki");
+    
+    if (shiki) {
+        const habilidadesSuprimidas = sala.efectos[jugador]?.habilidadesSuprimidas && sala.efectos[jugador].habilidadesSuprimidas >= sala.turnoActual; 
+        if (habilidadesSuprimidas) {
+            sala.log.unshift(`❌ Habilidades suprimidas! Shiki no puede usar su habilidad.`);
+            io.to(sala.id).emit("actualizar", sala);
+            return;
+        }
+
+        const resultadoShiki = lanzarMoneda();
+        let mensaje = `🪙 Shiki: ${resultadoShiki}! `;
+
+        if (resultadoShiki === "Cara") {
+            sala.campo[jugador].forEach(c => {
+                if (!c.estadosEspeciales.defensaExtra) c.estadosEspeciales.defensaExtra = 0;
+                c.estadosEspeciales.defensaExtra += 1;
+            });
+            mensaje += "Interpretación de Plano! Todas las cartas aliadas +1 defensa!";
+        } else {
+            mensaje += "Falla. No pasa nada.";
+        }
+
+        sala.log.unshift(mensaje);
+        io.to(sala.id).emit("habilidadMoneda", { resultado: resultadoShiki, mensaje: `Shiki lanza moneda: ${resultadoShiki}` });
+        io.to(sala.id).emit("actualizar", sala);
+        return;
+    }
+
+    const nombreJugador = sala.nombres[sala.jugadores.indexOf(jugador)];
+    const resultado = lanzarMoneda();
+    let mensajeLog = "";
+
+    if (resultado === "Cara") {
+        sala.HP[jugador] = Math.min(VIDA_INICIAL, sala.HP[jugador] + 1);
+        mensajeLog = `🪙 ${nombreJugador} lanza la moneda: Cara! Gana +1 PV.`;
+    } else {
+        sala.HP[jugador] = Math.max(0, sala.HP[jugador] - 1);
+        mensajeLog = `🪙 ${nombreJugador} lanza la moneda: Cruz! Pierde -1 PV.`;
+        if (sala.HP[jugador] <= 0) {
+            const op = obtenerOponente(sala, jugador);
+            io.to(sala.id).emit("victoria", { ganador: op });
+            return;
+        }
+    }
+
+    sala.log.unshift(mensajeLog);
+    io.to(sala.id).emit("habilidadMoneda", { resultado, mensaje: `Moneda: ${resultado}` });
+    io.to(sala.id).emit("actualizar", sala);
 }
 
 function verificarVictoriaBuraikan(jugador, sala, io) {
@@ -218,6 +243,12 @@ function manejarSeleccionAtacante(jugador, sala, nombre, io) {
     
     const carta = sala.campo[jugador].find(c => c.nombre === nombre);
     if (!carta) return;
+
+    if (sala.ataqueRealizadoEsteTurno) {
+        sala.log.unshift(`❌ Ya atacaste este turno! Solo puedes atacar una vez.`);
+        io.to(sala.id).emit("actualizar", sala);
+        return;
+    }
     
     const habilidadesSuprimidas = sala.efectos[jugador]?.habilidadesSuprimidas && sala.efectos[jugador].habilidadesSuprimidas >= sala.turnoActual; 
 
@@ -233,10 +264,28 @@ function manejarSeleccionAtacante(jugador, sala, nombre, io) {
         return;
     }
     
+    if (carta.nombre === "Shiki" && !habilidadesSuprimidas) {
+        const resultadoShiki = lanzarMoneda();
+        let mensaje = `🪙 Shiki: ${resultadoShiki}! `;
+        if (resultadoShiki === "Cara") {
+            sala.campo[jugador].forEach(c => {
+                if (!c.estadosEspeciales.defensaExtra) c.estadosEspeciales.defensaExtra = 0;
+                c.estadosEspeciales.defensaExtra += 1;
+            });
+            mensaje += "Interpretación de Plano! Todas las cartas aliadas +1 defensa!";
+        } else {
+            mensaje += "Falla. No pasa nada.";
+        }
+        sala.log.unshift(mensaje);
+        io.to(sala.id).emit("habilidadMoneda", { resultado: resultadoShiki, mensaje: `Shiki lanza moneda: ${resultadoShiki}` });
+        io.to(sala.id).emit("actualizar", sala);
+    } else if (carta.nombre === "Shiki" && habilidadesSuprimidas) {
+        sala.log.unshift(`❌ Habilidades suprimidas! Shiki no activa su habilidad.`);
+    }
+    
     if (carta.nombre === "Yohei" && !habilidadesSuprimidas) {
         const resultado = lanzarMoneda();
         io.to(sala.id).emit("habilidadMoneda", { resultado, mensaje: `Yohei lanza moneda: ${resultado}` });
-
         if (resultado === "Cruz") {
             carta.estadosEspeciales.inmovilizado = true;
             sala.log.unshift(`🪙 Yohei: Cruz! Quedó inmovilizado!`);
@@ -260,99 +309,82 @@ function manejarAtaque(jugador, sala, objetivo, io) {
     let cO = sala.campo[op].find(c => c.nombre === objetivo);
     if (!cA || !cO) return;
 
+    if (sala.ataqueRealizadoEsteTurno) return; 
+    sala.ataqueRealizadoEsteTurno = true; 
+
     const habilidadesSuprimidasJugador = sala.efectos[jugador]?.habilidadesSuprimidas && sala.efectos[jugador].habilidadesSuprimidas >= sala.turnoActual;
     const habilidadesSuprimidasOponente = sala.efectos[op]?.habilidadesSuprimidas && sala.efectos[op].habilidadesSuprimidas >= sala.turnoActual;
 
-    // 1. Check de Toma (Reflejo, ya que afecta al atacante)
     if (cO.nombre === "Toma" && !cO.estadosEspeciales.espejoUsado) {
         cO.estadosEspeciales.espejoUsado = true;
-        const danoReflejado = calcularDanoAtaque(cA, cO, sala, jugador);
+        const danoReflejado = calcularDanoAtaque(cA, cO, sala, jugador).dano;
         sala.HP[jugador] -= danoReflejado;
         cA.vida -= 1;
         sala.log.unshift(`🪞 Toma refleja el ataque! ${cA.nombre} recibe ${danoReflejado} PV y -1 vida!`);
-        
         if (cA.vida <= 0) {
             sala.campo[jugador] = sala.campo[jugador].filter(c => c.nombre !== cA.nombre);
             sala.log.unshift(`💀 ${cA.nombre} eliminado!`);
         }
-        
         if (sala.HP[jugador] <= 0) {
             io.to(sala.id).emit("victoria", { ganador: op });
             return;
         }
-        
         atacanteSeleccionado = null;
         io.to(sala.id).emit("actualizar", sala);
         return;
     }
 
-    // 2. **ZEN FIX/CHECK**: Máxima prioridad para invencibilidad (debe bloquear todo daño)
     if (cO.estadosEspeciales.invencible && cO.estadosEspeciales.invencible >= sala.turnoActual) {
         sala.log.unshift(`🛡️ ${cO.nombre} es invencible! El ataque no tiene efecto!`);
         atacanteSeleccionado = null;
         io.to(sala.id).emit("actualizar", sala);
         return;
     }
-    // Fin Zen Check
 
-    // 3. Check de Iori (Protección a aliados)
     const iori = sala.campo[op].find(c => c.nombre === "Iori");
-    const danoPrevio = calcularDanoAtaque(cA, cO, sala, jugador);
-
     if (iori && cO.nombre !== "Iori" && !iori.estadosEspeciales.monedaUsada && !habilidadesSuprimidasOponente) { 
-        
         const resultado = lanzarMoneda();
         iori.estadosEspeciales.monedaUsada = true; 
-
         if (resultado === "Cara") {
-            const danoDevuelto = danoPrevio * 2;
+            const danoDevuelto = calcularDanoAtaque(cA, cO, sala, jugador).dano * 2;
             sala.HP[jugador] -= danoDevuelto;
-
-            sala.log.unshift(`🪙 Iori: Cara! Lanzamiento Vengativo! Ataque anulado. Rival recibe ${danoDevuelto} PV!`);
+            sala.log.unshift(`🪙 Iori: Cara! Lanzamiento Vengativo! Rival recibe ${danoDevuelto} PV!`);
             io.to(sala.id).emit("habilidadMoneda", { resultado, mensaje: `Iori devuelve ${danoDevuelto} de daño!` });
-
             if (sala.HP[jugador] <= 0) {
                 io.to(sala.id).emit("victoria", { ganador: op });
                 return;
             }
-
             atacanteSeleccionado = null;
             io.to(sala.id).emit("actualizar", sala);
             return; 
         } else {
             iori.vida -= 1; 
-
-            sala.log.unshift(`🪙 Iori: Cruz! Iori interviene y falla. Pierde 1 vida. El ataque continúa contra ${cO.nombre}.`);
+            sala.log.unshift(`🪙 Iori: Cruz! Iori interviene y falla. Pierde 1 vida.`);
             io.to(sala.id).emit("habilidadMoneda", { resultado, mensaje: "Iori falla y pierde 1 vida" });
-
             if (iori.vida <= 0) {
                 sala.campo[op] = sala.campo[op].filter(c => c.nombre !== "Iori");
                 sala.log.unshift(`💀 Iori eliminado!`);
             }
-            // El ataque continúa su resolución normal.
         }
     }
 
-    // 4. Chequeos de Redirección y Absorción (Hokusai, Ryoga, Dongha/Chungsung, Shion)
+    // --- LÓGICA DE REDIRECCIÓN DE DAÑO (CORREGIDA) ---
 
     const hokusai = sala.campo[op].find(c => c.nombre === "Hokusai");
     if (hokusai && !hokusai.estadosEspeciales.absorcionUsada && cO.vida === 1) {
         hokusai.estadosEspeciales.absorcionUsada = true;
         hokusai.vida -= 1;
-        const danoHP = calcularDanoAtaque(cA, cO, sala, jugador);
+        const danoHP = calcularDanoAtaque(cA, hokusai, sala, jugador).dano;
         sala.HP[op] -= danoHP;
-        sala.log.unshift(`🌸 Hokusai absorbe el ataque destinado a ${cO.nombre}! -${danoHP} PV`);
-        
+        sala.log.unshift(`🌸 Hokusai absorbe el ataque! -${danoHP} PV`);
         if (hokusai.vida <= 0) {
             sala.campo[op] = sala.campo[op].filter(c => c.nombre !== "Hokusai");
             sala.log.unshift(`💀 Hokusai eliminado!`);
         }
-        
         if (sala.HP[op] <= 0) {
             io.to(sala.id).emit("victoria", { ganador: jugador });
             return;
         }
-        
         atacanteSeleccionado = null;
         io.to(sala.id).emit("actualizar", sala);
         return;
@@ -361,20 +393,17 @@ function manejarAtaque(jugador, sala, objetivo, io) {
     const ryoga = sala.campo[op].find(c => c.nombre === "Ryoga");
     if (ryoga && cO.grupo === "Goku Luck" && cO.nombre !== "Ryoga") {
         ryoga.vida -= 1;
-        const danoHP = calcularDanoAtaque(cA, cO, sala, jugador);
+        const danoHP = calcularDanoAtaque(cA, ryoga, sala, jugador).dano;
         sala.HP[op] -= danoHP;
-        sala.log.unshift(`🛡️ Ryoga absorbe el ataque destinado a ${cO.nombre}! -${danoHP} PV`);
-        
+        sala.log.unshift(`🛡️ Ryoga absorbe el ataque! -${danoHP} PV`);
         if (ryoga.vida <= 0 && !ryoga.estadosEspeciales.turnosResistencia) {
             ryoga.estadosEspeciales.turnosResistencia = 2;
             sala.log.unshift(`💪 Ryoga resiste! 2 turnos más antes de morir!`);
         }
-        
         if (sala.HP[op] <= 0) {
             io.to(sala.id).emit("victoria", { ganador: jugador });
             return;
         }
-        
         atacanteSeleccionado = null;
         io.to(sala.id).emit("actualizar", sala);
         return;
@@ -385,24 +414,23 @@ function manejarAtaque(jugador, sala, objetivo, io) {
     if (dongha && chungsung && cO.nombre === "Dongha") {
         chungsung.vida -= 1;
         dongha.vida = Math.min(3, dongha.vida + 1);
-        const danoHP = calcularDanoAtaque(cA, cO, sala, jugador);
+        // Daño calculado contra Chungsung (Darkness) para Kenta/sinergias
+        const danoHP = calcularDanoAtaque(cA, chungsung, sala, jugador).dano;
         sala.HP[op] -= danoHP;
         sala.log.unshift(`⚔️ Chungsung recibe el daño por Dongha! Dongha +1 vida, -${danoHP} PV`);
-        
         if (chungsung.vida <= 0) {
             sala.campo[op] = sala.campo[op].filter(c => c.nombre !== "Chungsung");
             sala.log.unshift(`💀 Chungsung eliminado!`);
         }
-        
         if (sala.HP[op] <= 0) {
             io.to(sala.id).emit("victoria", { ganador: jugador });
             return;
         }
-        
         atacanteSeleccionado = null;
         io.to(sala.id).emit("actualizar", sala);
         return;
     }
+    // --- FIN LÓGICA DE REDIRECCIÓN DE DAÑO ---
 
     const shion = sala.campo[op].find(c => c.nombre === "Shion");
     if (shion && sala.campo[op].length > 1) {
@@ -414,17 +442,15 @@ function manejarAtaque(jugador, sala, objetivo, io) {
         }
     }
 
-    // 5. Lógica de habilidades de ataque (Ryu, Yuto)
     if (cA.nombre === "Ryu" && !habilidadesSuprimidasJugador) {
         const resultado = lanzarMoneda();
         io.to(sala.id).emit("habilidadMoneda", { resultado, mensaje: `Ryu lanza moneda: ${resultado}` });
-
         if (resultado === "Cara") {
             sala.campo[op].forEach(c => c.estadosEspeciales.inmovilizado = true);
-            sala.log.unshift(`🪙 Ryu: Cara! Confunde a todos los enemigos (Inmovilizados)!`);
+            sala.log.unshift(`🪙 Ryu: Cara! Enemigos inmovilizados!`);
         } else {
             sala.campo[jugador].forEach(c => c.estadosEspeciales.inmovilizado = true);
-            sala.log.unshift(`🪙 Ryu: Cruz! Confunde a todos los aliados (Inmovilizados)!`);
+            sala.log.unshift(`🪙 Ryu: Cruz! Aliados inmovilizados!`);
         }
     } else if (cA.nombre === "Ryu" && habilidadesSuprimidasJugador) {
          sala.log.unshift(`❌ Habilidades suprimidas! Ryu no puede usar su habilidad.`);
@@ -432,18 +458,15 @@ function manejarAtaque(jugador, sala, objetivo, io) {
 
     if (cA.nombre === "Yuto" && cA.estadosEspeciales.golpeDecisivoListo) {
         cO.vida = 0;
-        sala.log.unshift(`⚫ Yuto ejecuta Golpe Decisivo! ${cO.nombre} eliminado instantáneamente!`);
+        sala.log.unshift(`⚫ Yuto ejecuta Golpe Decisivo! Eliminado instantáneamente!`);
         cA.estadosEspeciales.golpeDecisivoListo = false;
     }
-    // Fin Lógica de habilidades de ataque
 
-    // 6. Resolución final del daño.
-    const kenta = sala.campo[jugador].find(c => c.nombre === "Kenta");
-    let danoHP = calcularDanoAtaque(cA, cO, sala, jugador);
+    const resultadoDano = calcularDanoAtaque(cA, cO, sala, jugador);
+    let danoHP = resultadoDano.dano;
     
-    if (kenta && cO.elemento !== "Luz" && cO.elemento !== "Oscuridad" && cO.elemento !== "Viento") {
-        danoHP += 1;
-        sala.log.unshift(`💻 Kenta hackea el elemento! +1 daño por sinergia!`);
+    if (resultadoDano.logMessage) {
+        sala.log.unshift(resultadoDano.logMessage);
     }
 
     sala.HP[op] -= danoHP;
@@ -453,7 +476,12 @@ function manejarAtaque(jugador, sala, objetivo, io) {
 
     if (cA.nombre === "Yeon Hajun") {
         cO.estadosEspeciales.fascinado = true;
-        sala.log.unshift(`✨ ${cO.nombre} está fascinado! Efectos positivos anulados!`);
+        sala.log.unshift(`✨ ${cO.nombre} está fascinado!`);
+    }
+
+    if (cA.nombre === "Allen") {
+        cO.estadosEspeciales.inmovilizado = true;
+        sala.log.unshift(`💬 Allen inmoviliza a ${cO.nombre}!`);
     }
 
     if (cO.vida <= 0) {
@@ -472,7 +500,7 @@ function manejarAtaque(jugador, sala, objetivo, io) {
 
 function calcularDanoAtaque(atacante, defensor, sala, jugador) {
     let dano = atacante.dano;
-    
+    let logMessage = null; 
     const defensorFascinado = defensor.estadosEspeciales.fascinado;
 
     if (atacante.nombre === "Kanata Yatonokami") {
@@ -491,7 +519,7 @@ function calcularDanoAtaque(atacante, defensor, sala, jugador) {
         const op = obtenerOponente(sala, jugador);
         const totalRaperos = sala.campo[jugador].length + sala.campo[op].length;
         if (totalRaperos > 4) {
-            dano = Math.max(1, dano - 1); // Siempre un mínimo de 1 de daño
+            dano = Math.max(1, dano - 1);
         }
     }
     
@@ -514,24 +542,32 @@ function calcularDanoAtaque(atacante, defensor, sala, jugador) {
         dano += 1;
         atacante.estadosEspeciales.agotadoTurno = sala.turnoActual + 2; 
         atacante.estadosEspeciales.gaviaActiva = false;
-        sala.log.unshift(`💥 Satsuki usa Gavia! +1 Daño y queda agotado el próximo turno.`); 
+        sala.log.unshift(`💥 Satsuki usa Gavia! +1 Daño y agotado próximo turno.`); 
     }
     
+    // SINERGIA Y KENTA
+    let sinergiaNaturalAplicada = false;
     if (SINERGIAS[atacante.elemento]?.includes(defensor.elemento)) {
         dano += 1;
+        sinergiaNaturalAplicada = true; 
+    }
+    
+    const kenta = sala.campo[jugador].find(c => c.nombre === "Kenta");
+    if (!sinergiaNaturalAplicada && kenta && defensor.elemento !== "Luz" && defensor.elemento !== "Oscuridad" && defensor.elemento !== "Viento") {
+        dano += 1;
+        logMessage = `💻 Kenta hackea el elemento! +1 daño por debilidad.`;
     }
     
     if (defensor.estadosEspeciales.defensaExtra > 0 && !defensorFascinado) {
         dano = Math.max(1, dano - defensor.estadosEspeciales.defensaExtra);
     }
     
-    // **ZEN FIX**: Aplica el estado de "Extremadamente Vulnerable" con +1 de daño.
     if (defensor.nombre === "Zen" && defensor.estadosEspeciales.vulnerable) {
         dano += 1;
-        sala.log.unshift(`⚠️ Zen es Extremadamente Vulnerable: +1 daño recibido!`);
+        sala.log.unshift(`⚠️ Zen es Vulnerable: +1 daño recibido!`);
     }
     
-    return Math.max(1, dano);
+    return { dano: Math.max(1, dano), logMessage };
 }
 
 function manejarFinTurno(jugador, sala, io) {
@@ -548,20 +584,21 @@ function manejarFinTurno(jugador, sala, io) {
     let nombreJugador;
 
     if (sala.efectos[op]?.turnoSaltado) {
-        sala.log.unshift(`❌ Movimiento de Príncipe de Aoi! El turno de ${sala.nombres[sala.jugadores.indexOf(op)]} es saltado.`);
+        sala.log.unshift(`❌ Movimiento de Príncipe de Aoi! Turno de rival saltado.`);
         delete sala.efectos[op].turnoSaltado;
         
         sala.turno = jugador;
         sala.turnoActual += 2;
-        nombreJugador = sala.turno === sala.jugadores[0] ? sala.nombres[0] : sala.nombres[1];
+        nombreJugador = sala.nombres[sala.jugadores.indexOf(jugador)];
         
     } else {
         sala.turno = op;
         sala.turnoActual++;
-        nombreJugador = sala.turno === sala.jugadores[0] ? sala.nombres[0] : sala.nombres[1];
+        nombreJugador = sala.nombres[sala.jugadores.indexOf(op)];
     }
     
     sala.jugadasEsteTurno = 0;
+    sala.ataqueRealizadoEsteTurno = false; 
     atacanteSeleccionado = null;
     
     sala.log.unshift(`--- Turno ${sala.turnoActual}: ${nombreJugador} ---`);
@@ -587,9 +624,11 @@ function aplicarEfectosFinTurno(jugador, sala, io) {
     sala.campo[jugador].forEach(c => {
         if (c.nombre === "Reo" && c.estadosEspeciales.gastoPesadoTurnos > 0) {
             c.estadosEspeciales.gastoPesadoTurnos--;
+            if (c.estadosEspeciales.gastoPesadoTurnos === 0) {
+                 sala.log.unshift(`✅ Gasto Pesado de Reo ha finalizado.`);
+            }
         }
         
-        // **ZEN VULNERABILIDAD**: Se elimina invencibilidad y se aplica vulnerabilidad
         if (c.nombre === "Zen" && c.estadosEspeciales.invencible && c.estadosEspeciales.invencible < sala.turnoActual) {
             delete c.estadosEspeciales.invencible;
             c.estadosEspeciales.vulnerable = true;
@@ -610,11 +649,10 @@ function aplicarEfectosFinTurno(jugador, sala, io) {
         if (c.nombre === "Yuto") {const turnosEnCampo = sala.turnoActual - c.turnoInvocado;
             if (turnosEnCampo >= 3) {
                 c.estadosEspeciales.golpeDecisivoListo = true;
-                sala.log.unshift("⚫ Medidor de oscuridad de Yuto lleno! Próximo ataque es letal!");
+                sala.log.unshift("⚫ Yuto: Golpe Decisivo listo!");
             }
         }
         
-        // Limpieza de estados generales
         if (c.estadosEspeciales.inmovilizado) {
             c.estadosEspeciales.inmovilizado = false;
         }
@@ -647,8 +685,7 @@ function aplicarEfectosFinTurno(jugador, sala, io) {
         if (c.nombre === "Toma" && c.estadosEspeciales.espejoUsado) {
             delete c.estadosEspeciales.espejoUsado;
         }
-        // Se quitó la limpieza de 'invencible' de este bucle para consolidarla con la lógica de 'vulnerable' de Zen arriba.
     });
 }
 
-export { iniciarPartida, manejarJugarCarta, manejarSeleccionAtacante, manejarAtaque, manejarFinTurno };
+export { iniciarPartida, manejarJugarCarta, manejarSeleccionAtacante, manejarAtaque, manejarFinTurno, manejarLanzarMoneda };

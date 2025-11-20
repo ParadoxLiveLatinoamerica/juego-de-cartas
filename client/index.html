@@ -7,14 +7,13 @@
     <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <!-- MENÚ PRINCIPAL -->
     <div id="menu">
         <div class="menu-container">
             <h1>🎴 Paradox Live Battle</h1>
             <p class="subtitle">Juego de Cartas Multijugador</p>
             
             <div class="menu-section">
-                <input id="nombre" placeholder="Tu nombre" maxlength="12" />
+                <input id="nombre" placeholder="Tu nombre" maxlength="12" autocomplete="off" />
                 
                 <button id="crear" class="btn-primary">
                     🆕 Crear Sala
@@ -22,7 +21,7 @@
                 
                 <div class="divider">o únete a una sala</div>
                 
-                <input id="codigo" placeholder="Código de sala" />
+                <input id="codigo" placeholder="Código de sala" autocomplete="off" />
                 <button id="unirse" class="btn-secondary">
                     🚪 Unirse a Sala
                 </button>
@@ -32,9 +31,7 @@
         </div>
     </div>
 
-    <!-- JUEGO -->
     <div id="juego" style="display:none;">
-        <!-- Header con info de jugadores -->
         <div class="game-header">
             <div class="player-info enemy">
                 <div class="player-name" id="nombreJ1"></div>
@@ -57,13 +54,11 @@
             </div>
         </div>
 
-        <!-- Campo Rival -->
         <div class="battlefield-section">
             <div class="section-title enemy-title">⚔️ Campo Rival</div>
             <div id="campoRival" class="battlefield enemy-field"></div>
         </div>
 
-        <!-- Controles -->
         <div class="controls-section">
             <div class="game-info">
                 <span class="plays-counter">Cartas jugadas: <strong id="cartasJ">0</strong>/2</span>
@@ -72,29 +67,34 @@
             <button id="moneda" class="btn-coin">🪙 Lanzar Moneda</button>
         </div>
 
-        <!-- Campo Propio -->
         <div class="battlefield-section">
             <div class="section-title ally-title">🛡️ Tu Campo</div>
             <div id="campoPropio" class="battlefield ally-field"></div>
         </div>
 
-        <!-- Mano -->
-        <div class="hand-section">
-            <div class="section-title hand-title">
-                🃏 Tu Mano
-                <span class="hand-hint">Click para jugar | Doble click en campo para atacar</span>
+        <div class="bottom-section">
+            <div class="deck-container">
+                <div class="deck-title">📚 Mazo</div>
+                <div class="deck-card" id="mazoVisual">
+                    <div class="deck-count" id="mazoConteo">24</div>
+                </div>
             </div>
-            <div id="manoPropia" class="hand"></div>
+
+            <div class="hand-container">
+                <div class="section-title hand-title">
+                    🃏 Tu Mano
+                    <span class="hand-hint">Click para jugar | Doble click en campo para atacar</span>
+                </div>
+                <div id="manoPropia" class="hand"></div>
+            </div>
         </div>
 
-        <!-- Log -->
         <div class="log-section">
             <div class="log-title">📜 Historial de Batalla</div>
             <div id="log" class="log-content"></div>
         </div>
     </div>
 
-    <!-- Overlay Moneda -->
     <div id="monedaOverlay" class="overlay">
         <div class="coin-result">
             <div id="resultadoMoneda" class="coin-text"></div>

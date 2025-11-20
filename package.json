@@ -14,5 +14,13 @@
   "description": "",
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ParadoxLiveLatinoamerica/juego-de-cartas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ParadoxLiveLatinoamerica/juego-de-cartas/issues"
+  },
+  "homepage": "https://github.com/ParadoxLiveLatinoamerica/juego-de-cartas#readme"
 }

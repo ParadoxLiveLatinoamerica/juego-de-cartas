@@ -1,12 +1,25 @@
 {
   "name": "juego-cartas",
   "version": "1.0.0",
-  "type": "module",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.21.2",
-    "socket.io": "^4.8.1",
-    "cors": "^2.8.5"
-  }
+    "socket.io": "^4.8.1"
+  },
+  "description": "",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ParadoxLiveLatinoamerica/juego-de-cartas.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ParadoxLiveLatinoamerica/juego-de-cartas/issues"
+  },
+  "homepage": "https://github.com/ParadoxLiveLatinoamerica/juego-de-cartas#readme"
 }
